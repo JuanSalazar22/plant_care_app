@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Plant Care App</title>
+    <!-- <link rel="stylesheet" href="styles.css"> -->
+    <style>
+        body { font-family: sans-serif; margin: 20px; background-color: #f4f4f4; }
+        h1, h2, h3 { color: #333; }
+        .container { max-width: 1000px; margin: auto; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        .section { margin-bottom: 30px; padding-bottom: 20px; border-bottom: 1px solid #eee; }
+        .plant-list, .schedule-list { list-style: none; padding: 0; }
+        .plant-item, .schedule-item { background: #f9f9f9; margin-bottom: 10px; padding: 15px; border-radius: 5px; border: 1px solid #ddd; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; }
+        .plant-details { flex-grow: 1; margin-right: 10px; }
+        .plant-actions button, .form-group button { padding: 8px 12px; margin-left: 5px; cursor: pointer; border: none; border-radius: 4px; }
+        .btn-water { background-color: #3498db; color: white; }
+        .btn-fertilize { background-color: #2ecc71; color: white; }
+        .btn-delete { background-color: #e74c3c; color: white; }
+        .btn-update { background-color: #f39c12; color: white; }
+        .btn-view { background-color: #9b59b6; color: white; }
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; margin-bottom: 5px; }
+        .form-group input[type="text"], .form-group input[type="number"] { width: calc(100% - 22px); padding: 10px; border: 1px solid #ccc; border-radius: 4px; }
+        .form-group button[type="submit"] { background-color: #2ecc71; color: white; padding: 10px 15px; }
+        .modal { display: none; position: fixed; z-index: 1; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.6); }
+        .modal-content { background-color: #fefefe; margin: 10% auto; padding: 30px; border: 1px solid #888; width: 80%; max-width: 600px; border-radius: 8px; position: relative; }
+        .close-button { color: #aaa; position: absolute; top: 10px; right: 20px; font-size: 28px; font-weight: bold; cursor: pointer; }
+        .close-button:hover, .close-button:focus { color: black; text-decoration: none; }
+        .plant-images img { max-width: 150px; max-height: 150px; margin: 5px; border: 1px solid #ccc; border-radius: 4px; object-fit: cover;}
+        .overdue { color: red; font-weight: bold; }
+        .upcoming { color: orange; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>Plant Care Manager</h1>
+
+    <!-- Add/Update Plant Form -->
+    <div class="section">
+        <h2 id="form-title">Add New Plant</h2>
+        <form id="plant-form">
+            <input type="hidden" id="plant-id">
+            <div class="form-group">
+                <label for="name">Plant Name:</label>
+                <input type="text" id="name" required>
+            </div>
+            <div class="form-group">
+                <label for="watering-freq">Watering Frequency (days):</label>
+                <input type="number" id="watering-freq" min="1" required>
+            </div>
+            <div class="form-group">
+                <label for="fertilizing-freq">Fertilizing Frequency (days):</label>
+                <input type="number" id="fertilizing-freq" min="1" required>
+            </div>
+            <div class="form-group">
+                <button type="submit" id="submit-button">Add Plant</button>
+                <button type="button" id="cancel-update-button" style="display: none; background-color: #aaa; color: white;">Cancel Update</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Plant List -->
+    <div class="section">
+        <h2>My Plants</h2>
+        <ul id="plant-list" class="plant-list">
+            <!-- Plant items will be loaded here -->
+        </ul>
+    </div>
+
+    <!-- Schedule -->
+    <div class="section">
+        <h2>Upcoming & Overdue Tasks (Next 3 Days)</h2>
+        <h3>Overdue</h3>
+        <ul id="overdue-list" class="schedule-list"></ul>
+        <h3>Upcoming</h3>
+        <ul id="upcoming-list" class="schedule-list"></ul>
+    </div>
+
+    <!-- Plant Details Modal -->
+    <div id="details-modal" class="modal">
+        <div class="modal-content">
+            <span class="close-button">×</span>
+            <h2 id="modal-plant-name">Plant Details</h2>
+            <p><strong>ID:</strong> <span id="modal-plant-id"></span></p>
+            <p><strong>Water every:</strong> <span id="modal-water-freq"></span> days</p>
+            <p><strong>Fertilize every:</strong> <span id="modal-fertilize-freq"></span> days</p>
+            <p><strong>Last Watered:</strong> <span id="modal-last-watered"></span></p>
+            <p><strong>Last Fertilized:</strong> <span id="modal-last-fertilized"></span></p>
+            <p><strong>Added On:</strong> <span id="modal-created-at"></span></p>
+
+            <h3>Upload Image</h3>
+            <form id="image-upload-form">
+                <input type="hidden" id="upload-plant-id">
+                <div class="form-group">
+                    <input type="file" id="plant-image-input" name="plantImage" accept="image/*" required>
+                    <button type="submit">Upload Image</button>
+                </div>
+            </form>
+
+            <h3>Image History</h3>
+            <div id="modal-plant-images" class="plant-images">
+                <!-- Images will be loaded here -->
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const apiUrl = '/api';
+    const plantList = document.getElementById('plant-list');
+    const upcomingList = document.getElementById('upcoming-list');
+    const overdueList = document.getElementById('overdue-list');
+    const plantForm = document.getElementById('plant-form');
+    const nameInput = document.getElementById('name');
+    const waterFreqInput = document.getElementById('watering-freq');
+    const fertilizeFreqInput = document.getElementById('fertilizing-freq');
+    const plantIdInput = document.getElementById('plant-id');
+    const formTitle = document.getElementById('form-title');
+    const submitButton = document.getElementById('submit-button');
+    const cancelUpdateButton = document.getElementById('cancel-update-button');
+
+    // Modal elements
+    const modal = document.getElementById('details-modal');
+    const modalPlantName = document.getElementById('modal-plant-name');
+    const modalPlantId = document.getElementById('modal-plant-id');
+    const modalWaterFreq = document.getElementById('modal-water-freq');
+    const modalFertilizeFreq = document.getElementById('modal-fertilize-freq');
+    const modalLastWatered = document.getElementById('modal-last-watered');
+    const modalLastFertilized = document.getElementById('modal-last-fertilized');
+    const modalCreatedAt = document.getElementById('modal-created-at');
+    const modalPlantImages = document.getElementById('modal-plant-images');
+    const uploadPlantIdInput = document.getElementById('upload-plant-id');
+    const imageUploadForm = document.getElementById('image-upload-form');
+    const closeModalButton = document.querySelector('.close-button');
+
+    // --- Utility Functions ---
+    const formatDate = (dateString) => dateString ? new Date(dateString).toLocaleDateString() : 'Never';
+
+    // --- API Functions ---
+    async function fetchPlants() {
+        try {
+            const response = await fetch(`${apiUrl}/plants`);
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+            const plants = await response.json();
+            renderPlants(plants);
+        } catch (error) {
+            console.error("Error fetching plants:", error);
+            plantList.innerHTML = '<li>Error loading plants.</li>';
+        }
+    }
+
+    async function fetchSchedule() {
+        try {
+            const response = await fetch(`${apiUrl}/schedule`);
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+            const schedule = await response.json();
+            renderSchedule(schedule);
+        } catch (error) {
+            console.error("Error fetching schedule:", error);
+            upcomingList.innerHTML = '<li>Error loading schedule.</li>';
+            overdueList.innerHTML = '<li>Error loading schedule.</li>';
+        }
+    }
+
+    async function addPlant(plantData) {
+        try {
+            const response = await fetch(`${apiUrl}/plants`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(plantData)
+            });
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+            await fetchPlants(); // Refresh list
+            await fetchSchedule(); // Refresh schedule
+            plantForm.reset();
+        } catch (error) {
+            console.error("Error adding plant:", error);
+            alert("Failed to add plant.");
+        }
+    }
+
+    async function updatePlant(id, plantData) {
+        try {
+            const response = await fetch(`${apiUrl}/plants/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(plantData)
+            });
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+            await fetchPlants(); // Refresh list
+            await fetchSchedule(); // Refresh schedule
+            resetForm();
+        } catch (error) {
+            console.error("Error updating plant:", error);
+            alert("Failed to update plant.");
+        }
+    }
+
+    async function deletePlant(id) {
+        if (!confirm('Are you sure you want to delete this plant and its images?')) return;
+        try {
+            const response = await fetch(`${apiUrl}/plants/${id}`, { method: 'DELETE' });
+            if (!response.ok && response.status !== 204) throw new Error(`HTTP error! status: ${response.status}`); // 204 No Content is OK
+            await fetchPlants(); // Refresh list
+            await fetchSchedule(); // Refresh schedule
+        } catch (error) {
+            console.error("Error deleting plant:", error);
+            alert("Failed to delete plant.");
+        }
+    }
+
+    async function markAction(id, action) { // action = 'water' or 'fertilize'
+        try {
+            const response = await fetch(`${apiUrl}/plants/${id}/${action}`, { method: 'POST' });
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+            await fetchPlants(); // Refresh list
+            await fetchSchedule(); // Refresh schedule
+            // If modal is open for this plant, refresh its data too
+            if (modal.style.display === 'block' && modalPlantId.textContent === id) {
+                const updatedPlant = await response.json();
+                showPlantDetails(updatedPlant); // Update modal directly
+            }
+        } catch (error) {
+            console.error(`Error marking plant as ${action}ed:`, error);
+            alert(`Failed to mark plant as ${action}ed.`);
+        }
+    }
+
+    async function uploadImage(plantId, formData) {
+        try {
+            const response = await fetch(`${apiUrl}/plants/${plantId}/images`, {
+                method: 'POST',
+                body: formData // FormData handles multipart encoding
+            });
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+            const updatedPlant = await response.json();
+            showPlantDetails(updatedPlant); // Refresh modal content
+            await fetchPlants(); // Needed to potentially update any summary info if added later
+            imageUploadForm.reset(); // Clear the file input
+            alert('Image uploaded successfully!');
+        } catch (error) {
+            console.error("Error uploading image:", error);
+            alert("Failed to upload image.");
+        }
+    }
+
+    // --- Rendering Functions ---
+    function renderPlants(plants) {
+        plantList.innerHTML = ''; // Clear existing list
+        if (plants.length === 0) {
+            plantList.innerHTML = '<li>No plants added yet.</li>';
+            return;
+        }
+        plants.sort((a, b) => a.name.localeCompare(b.name)); // Sort alphabetically
+        plants.forEach(plant => {
+            const li = document.createElement('li');
+            li.className = 'plant-item';
+            li.innerHTML = `
+                    <div class="plant-details">
+                        <strong>${plant.name}</strong><br>
+                        <small>Water every ${plant.wateringFrequencyDays} days (Last: ${formatDate(plant.lastWatered)})</small><br>
+                        <small>Fertilize every ${plant.fertilizingFrequencyDays} days (Last: ${formatDate(plant.lastFertilized)})</small>
+                    </div>
+                    <div class="plant-actions">
+                         <button class="btn-view" data-id="${plant.id}">View/Images</button>
+                        <button class="btn-water" data-id="${plant.id}">Watered</button>
+                        <button class="btn-fertilize" data-id="${plant.id}">Fertilized</button>
+                         <button class="btn-update" data-id="${plant.id}" data-name="${plant.name}" data-water="${plant.wateringFrequencyDays}" data-fertilize="${plant.fertilizingFrequencyDays}">Update</button>
+                        <button class="btn-delete" data-id="${plant.id}">Delete</button>
+                    </div>
+                `;
+            plantList.appendChild(li);
+        });
+    }
+
+    function renderSchedule(schedule) {
+        upcomingList.innerHTML = '';
+        overdueList.innerHTML = '';
+
+        if (schedule.overdueTasks.length === 0) {
+            overdueList.innerHTML = '<li>Nothing overdue!</li>';
+        } else {
+            schedule.overdueTasks.forEach(task => {
+                const li = document.createElement('li');
+                li.className = 'schedule-item overdue';
+                li.innerHTML = `
+                        ${task.plantName} - ${task.taskType} (Due: ${formatDate(task.dueDate)}) - <strong>${task.daysOverdue} days overdue</strong>
+                        <button class="${task.taskType === 'Watering' ? 'btn-water' : 'btn-fertilize'}" data-id="${task.plantId}">Mark Done</button>
+                    `;
+                overdueList.appendChild(li);
+            });
+        }
+
+
+        if (schedule.upcomingTasks.length === 0) {
+            upcomingList.innerHTML = '<li>No upcoming tasks in the next 3 days.</li>';
+        } else {
+            schedule.upcomingTasks.forEach(task => {
+                const li = document.createElement('li');
+                li.className = 'schedule-item upcoming';
+                li.innerHTML = `
+                        ${task.plantName} - ${task.taskType} (Due: ${formatDate(task.dueDate)})
+                        <button class="${task.taskType === 'Watering' ? 'btn-water' : 'btn-fertilize'}" data-id="${task.plantId}">Mark Done</button>
+                    `;
+                upcomingList.appendChild(li);
+            });
+        }
+    }
+
+    // --- Form Handling ---
+    function resetForm() {
+        plantForm.reset();
+        plantIdInput.value = '';
+        formTitle.textContent = 'Add New Plant';
+        submitButton.textContent = 'Add Plant';
+        cancelUpdateButton.style.display = 'none';
+    }
+
+    function populateFormForUpdate(plant) {
+        plantIdInput.value = plant.id;
+        nameInput.value = plant.name;
+        waterFreqInput.value = plant.wateringFrequencyDays;
+        fertilizeFreqInput.value = plant.fertilizingFrequencyDays;
+        formTitle.textContent = `Update ${plant.name}`;
+        submitButton.textContent = 'Save Changes';
+        cancelUpdateButton.style.display = 'inline-block';
+        nameInput.focus(); // Focus on the first field
+    }
+
+    plantForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const plantData = {
+            name: nameInput.value,
+            wateringFrequencyDays: parseInt(waterFreqInput.value, 10),
+            fertilizingFrequencyDays: parseInt(fertilizeFreqInput.value, 10)
+        };
+        const plantId = plantIdInput.value;
+
+        if (plantId) {
+            updatePlant(plantId, plantData);
+        } else {
+            addPlant(plantData);
+        }
+    });
+
+    cancelUpdateButton.addEventListener('click', resetForm);
+
+    // --- Event Listeners for Plant Actions ---
+    plantList.addEventListener('click', (e) => {
+        const target = e.target;
+        const id = target.dataset.id;
+
+        if (!id) return; // Clicked on something else
+
+        if (target.classList.contains('btn-delete')) {
+            deletePlant(id);
+        } else if (target.classList.contains('btn-water')) {
+            markAction(id, 'water');
+        } else if (target.classList.contains('btn-fertilize')) {
+            markAction(id, 'fertilize');
+        } else if (target.classList.contains('btn-update')) {
+            const plantData = {
+                id: id,
+                name: target.dataset.name,
+                wateringFrequencyDays: target.dataset.water,
+                fertilizingFrequencyDays: target.dataset.fertilize
+            };
+            populateFormForUpdate(plantData);
+            window.scrollTo(0, 0); // Scroll to top to see the form
+        } else if (target.classList.contains('btn-view')) {
+            openModalWithPlantData(id);
+        }
+    });
+
+    // --- Event Listeners for Schedule Actions ---
+    upcomingList.addEventListener('click', handleScheduleButtonClick);
+    overdueList.addEventListener('click', handleScheduleButtonClick);
+
+    function handleScheduleButtonClick(e) {
+        const target = e.target;
+        const id = target.dataset.id;
+        if (!id || !target.tagName === 'BUTTON') return;
+
+        if (target.classList.contains('btn-water')) {
+            markAction(id, 'water');
+        } else if (target.classList.contains('btn-fertilize')) {
+            markAction(id, 'fertilize');
+        }
+    }
+
+    // --- Modal Logic ---
+    closeModalButton.onclick = () => modal.style.display = "none";
+    window.onclick = (event) => {
+        if (event.target == modal) {
+            modal.style.display = "none";
+        }
+    }
+
+    async function openModalWithPlantData(plantId) {
+        try {
+            const response = await fetch(`${apiUrl}/plants/${plantId}`);
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+            const plant = await response.json();
+            showPlantDetails(plant);
+            modal.style.display = 'block';
+        } catch (error) {
+            console.error("Error fetching plant details:", error);
+            alert("Failed to load plant details.");
+        }
+    }
+
+    function showPlantDetails(plant) {
+        modalPlantName.textContent = plant.name;
+        modalPlantId.textContent = plant.id;
+        modalWaterFreq.textContent = plant.wateringFrequencyDays;
+        modalFertilizeFreq.textContent = plant.fertilizingFrequencyDays;
+        modalLastWatered.textContent = formatDate(plant.lastWatered);
+        modalLastFertilized.textContent = formatDate(plant.lastFertilized);
+        modalCreatedAt.textContent = formatDate(plant.createdAt);
+        uploadPlantIdInput.value = plant.id; // Set ID for image upload form
+
+        // Display images
+        modalPlantImages.innerHTML = ''; // Clear previous images
+        if (plant.imageFilenames && plant.imageFilenames.length > 0) {
+            // Sort images (optional, assuming UUIDs are sortable chronologically - they are not perfectly)
+            // A better approach would be to store upload timestamps with filenames
+            // plant.imageFilenames.sort(); // Simple sort for now
+            plant.imageFilenames.forEach(filename => {
+                const img = document.createElement('img');
+                // Construct the correct image URL
+                img.src = `/uploads/${plant.id}/${filename}`;
+                img.alt = `${plant.name} image`;
+                img.onerror = () => { // Handle broken image links
+                    img.alt = `Image not found: ${filename}`;
+                    img.style.border = '1px solid red';
+                }
+                modalPlantImages.appendChild(img);
+            });
+        } else {
+            modalPlantImages.innerHTML = '<p>No images uploaded yet.</p>';
+        }
+    }
+
+    imageUploadForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const plantId = uploadPlantIdInput.value;
+        const fileInput = document.getElementById('plant-image-input');
+        if (fileInput.files.length > 0) {
+            const formData = new FormData();
+            formData.append('plantImage', fileInput.files[0]); // Key must match handler (`plantImage`)
+            uploadImage(plantId, formData);
+        } else {
+            alert('Please select an image file to upload.');
+        }
+    });
+
+
+    // --- Initial Load ---
+    fetchPlants();
+    fetchSchedule();
+
+</script>
+</body>
+</html>
